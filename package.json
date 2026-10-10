@@ -1,0 +1,24 @@
+{
+  "name": "photobooth-map",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "소상공인시장진흥공단 상가(상권)정보 API로 반경 내 매장을 수집하고, 포토부스 매장을 추려내는 유틸리티",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "fetch:stores": "node scripts/fetchStores.js",
+    "rebuild:derived": "node scripts/rebuildDerived.js",
+    "validate:brands": "node scripts/validateBrands.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.4.5",
+    "jose": "^6.2.12",
+    "next": "^16.3.8",
+    "pg": "^8.23.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
+}

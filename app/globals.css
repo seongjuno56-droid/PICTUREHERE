@@ -1,0 +1,208 @@
+:root {
+  /* --- Wavve 레퍼런스 기반 디자인 토큰 --- */
+  --canvas: #0a0e1a; /* 페이지 바탕 — 미드나잇 블루(순수 블랙 아님) */
+  --surface-1: #141a2b; /* 카드/패널 */
+  --surface-2: #1f2742; /* 드롭다운/호버/아이콘버튼 표면 */
+  --text-primary: #ffffff;
+  --text-secondary: #a7aec0;
+  --text-tertiary: #6b7286;
+  --divider: rgba(255, 255, 255, 0.08);
+  --input-border: rgba(255, 255, 255, 0.16);
+  --brand: #1351f9; /* 유일한 인터랙션 포인트 컬러 */
+  --brand-hover: #3a6cff;
+  --brand-pressed: #0e3fcc;
+  --live: #f5444c; /* 실시간성 표시 전용 — 일반 UI에는 쓰지 않음 */
+  --radius-sm: 6px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--canvas);
+  color: var(--text-primary);
+  /* Pretendard 단독(너무 딱딱함) → Jua(너무 둥글고 캐주얼함) → Gmarket Sans로 정착.
+     적당히 둥글면서도 트렌디한 느낌, Light/Medium/Bold 3웨이트 지원. 얘가 못 그리는
+     글자만 Pretendard로 자연스럽게 폴백 */
+  font-family: "Gmarket Sans", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic",
+    -apple-system, BlinkMacSystemFont, "Noto Sans KR", sans-serif;
+}
+
+/* 러닝타임/거리/카운트 같은 숫자 — 별도 서체 없이 Pretendard 안에서 표 정렬만 */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* 기본 OS 스크롤바(밝은 회색)는 다크 톤이랑 안 어울려서, 스크롤되는 영역(사이드바 결과
+   리스트, 로드뷰 패널, 어드민 표 등) 전부 톤에 맞춘 얇은 스크롤바로 통일한다. */
+* {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--surface-2) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--input-border);
+}
+
+/* select 박스 자체는 appearance:none + 커스텀 쉐브론으로 각자 스타일링하지만, 펼쳐지는
+   옵션 목록(팝업)은 OS/브라우저가 그려서 CSS로 못 건드리는 경우가 많다 — 그나마 이
+   규칙을 존중하는 브라우저(Chromium/Firefox 계열)에서는 다크 톤에 맞게 바꿔준다. */
+select option {
+  background-color: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/* 어드민 매장 관리 표 — 행 전체를 클릭해도 상세 모달이 열려서, 호버로 그 사실을 알려준다 */
+.store-row:hover {
+  background: var(--surface-2);
+}
+
+/* --- PC 레이아웃: 네이버지도 데스크톱 구조 참고 ---
+   좌측 고정폭 사이드바(검색/필터 + 결과 리스트) + 우측 지도가 뷰포트 나머지를 가득 채움
+   (예전처럼 지도를 좁은 "기기 프레임" 박스에 가두지 않음 — 실제 지도 서비스처럼 꽉 차게).
+   1024px 미만(모바일/태블릿)에서는 사이드바를 숨기고 지도 화면만 전체 폭으로 보여준다. */
+.page-shell {
+  min-height: 100vh;
+  background: var(--canvas);
+}
+
+.brand-panel {
+  display: none;
+}
+
+.app-frame {
+  width: 100%;
+}
+
+/* 로드뷰 패널 — 모바일에서는 지도 바로 아래 이어지는 센터정렬 블록, PC에서는
+   사이드바 하단 그리드 칸으로 옮겨감(아래 미디어쿼리). */
+.roadview-panel {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 36px 20px 0;
+}
+
+.roadview-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 360px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-1);
+}
+
+/* 모바일에서는 이 정보가 햄버거 메뉴 안에 이미 있어서(중복 방지) 숨기고,
+   PC에서만 사이드바 맨 아래 그리드 행으로 보여준다 */
+.sidebar-footer {
+  display: none;
+}
+
+/* .mobile-only의 반대 — 기본(모바일)은 숨기고 PC에서만 보여준다 */
+.pc-only {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  /* 좌측 420px 고정 사이드바(위→아래: 검색+결과 리스트 / 로드뷰 / 조용한 정보 푸터) +
+     우측 지도가 나머지 전체를 꽉 채우는 2열 3행 그리드. 지도는 세 행에 걸쳐 전체
+     높이로 확장된다. 푸터(.sidebar-footer)는 브랜드 패널의 "중간"이 아니라 로드뷰
+     밑, 사이드바 진짜 맨 아래에 와야 해서 별도 그리드 행으로 뺐다. */
+  .page-shell {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    grid-template-rows: 1fr 320px auto;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .brand-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+    border-right: 1px solid var(--divider);
+    border-bottom: 1px solid var(--divider);
+  }
+
+  .app-frame {
+    grid-column: 2;
+    grid-row: 1 / 4;
+    width: auto;
+    height: 100%;
+    margin: 0;
+    border-radius: 0;
+    overflow: hidden;
+    box-shadow: none;
+    max-height: none;
+  }
+
+  .app-frame > div {
+    max-height: none;
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  .roadview-panel {
+    grid-column: 1;
+    grid-row: 2;
+    max-width: none;
+    margin: 0;
+    padding: 16px 20px;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .roadview-canvas-wrap {
+    height: 190px;
+  }
+
+  .sidebar-footer {
+    display: block;
+    grid-column: 1;
+    grid-row: 3;
+    border-right: 1px solid var(--divider);
+    border-top: 1px solid var(--divider);
+    padding: 14px 20px;
+  }
+
+  /* PC에서는 검색 조건/결과 리스트가 좌측 사이드바 쪽에 도킹되므로, 모바일 전용
+     상단바/플로팅 칩/하단 리스트(네이버지도 모바일 구조 참고)는 숨긴다 */
+  .mobile-only {
+    display: none;
+  }
+
+  /* 모바일에서는 지도가 "min(640px, 66vh)" 고정 높이지만, PC에서는 사이드바 옆 공간을
+     꽉 채워야 네이버지도처럼 보인다 */
+  .map-fill-desktop {
+    height: 100% !important;
+  }
+
+  /* .mobile-only의 반대 — PC에서만 보이는 요소(지도 위 반경 컨트롤 등) */
+  .pc-only {
+    display: block;
+  }
+}

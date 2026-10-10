@@ -1,0 +1,9 @@
+node_modules/
+.env
+*.csv
+.next/
+*.log
+nationwide_photo_studio_stores.json
+로고 파일/
+.claude/
+scripts/.nationwide_progress.json
