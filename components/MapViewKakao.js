@@ -233,6 +233,8 @@ export default function MapViewKakao() {
   const roadviewContainerRef = useRef(null);
   const roadviewRef = useRef(null);
   const roadviewClientRef = useRef(null);
+  const roadviewCanvasWrapRef = useRef(null); // 휠 이벤트를 가로채서 바깥 스크롤로 넘겨주기 위한 래퍼
+  const sidebarScrollRef = useRef(null); // PC에서 실제로 스크롤되는 컨테이너(.sidebar-scroll)
   const roadviewSectionRef = useRef(null);
   const nearestListSectionRef = useRef(null);
   const [selectedStore, setSelectedStore] = useState(null); // 마커 클릭 시 로드뷰에 띄울 매장
@@ -652,6 +654,31 @@ export default function MapViewKakao() {
     roadviewSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [selectedStore]);
 
+  // 카카오 로드뷰 위젯은 그 영역 위에서 마우스 휠을 자체 줌으로 가로채버린다 — 그래서
+  // 결과리스트를 쭉 스크롤하다 커서가 로드뷰 캔버스에 닿는 순간 스크롤이 뚝 끊겨서
+  // "섹션이 따로 노는" 것처럼 느껴졌다(실측: 그 위에서 휠을 돌려도 .sidebar-scroll의
+  // scrollTop이 전혀 안 바뀜). 캡처 단계에서 휠 이벤트를 가로채 로드뷰 줌 대신 바깥
+  // 스크롤 컨테이너(PC는 .sidebar-scroll, 모바일은 window)를 직접 스크롤시켜서 한
+  // 페이지처럼 끊김 없이 이어지게 한다. 드래그로 로드뷰를 둘러보는 동작은 안 건드림.
+  useEffect(() => {
+    const el = roadviewCanvasWrapRef.current;
+    if (!el) return;
+
+    function handleWheel(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const isDesktop = window.matchMedia("(min-width: 1024px)").matches;
+      if (isDesktop && sidebarScrollRef.current) {
+        sidebarScrollRef.current.scrollTop += e.deltaY;
+      } else {
+        window.scrollBy(0, e.deltaY);
+      }
+    }
+
+    el.addEventListener("wheel", handleWheel, { passive: false, capture: true });
+    return () => el.removeEventListener("wheel", handleWheel, { capture: true });
+  }, []);
+
   const recenter = () => {
     const kakao = window.kakao;
     const map = mapRef.current;
@@ -926,7 +953,7 @@ export default function MapViewKakao() {
           래퍼 — globals.css .sidebar-scroll이 모바일에선 display:contents라 아래
           자식들이 각자 CSS대로(브랜드패널/PC리스트는 숨김, 로드뷰는 지도 바로 밑에)
           그대로 문서 흐름에 놓이고, PC에서만 실제 스크롤 컨테이너가 된다. */}
-      <div className="sidebar-scroll">
+      <div className="sidebar-scroll" ref={sidebarScrollRef}>
         {/* PC 전용 좌측 상단 — 검색 조건 UI가 이 안에 도킹되고, 스크롤해도 맨 위에 고정된다 */}
         <BrandPanel>
           <SearchControls {...searchControlsProps} />
@@ -1032,7 +1059,7 @@ export default function MapViewKakao() {
               );
             })()}
 
-          <div className="roadview-canvas-wrap">
+          <div className="roadview-canvas-wrap" ref={roadviewCanvasWrapRef}>
             <div ref={roadviewContainerRef} style={{ width: "100%", height: "100%" }} />
 
             {(!selectedStore || roadviewStatus === "checking" || roadviewStatus === "unavailable") && (
