@@ -1,8 +1,43 @@
 import "./globals.css";
 
+const SITE_TITLE = "픽처히어 | 내 근처 포토부스·인생네컷 지도";
+const SITE_DESCRIPTION =
+  "지금 내 근처 가장 가까운 포토부스 찾기. 인생네컷, 포토이즘, 포토그레이 등 전국 포토부스·무인사진관 위치를 지도에서 바로 확인하세요.";
+
 export const metadata = {
-  title: "픽처히어",
-  description: "주변 즉석사진(네컷사진) 매장을 반경별로 찾아보는 지도, 픽처히어",
+  metadataBase: new URL("https://picturehere-mu.vercel.app"),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  keywords: [
+    "포토부스",
+    "근처 포토부스",
+    "인생네컷",
+    "근처 인생네컷",
+    "포토이즘",
+    "포토그레이",
+    "무인사진관",
+    "근처 무인 사진",
+    "무인사진",
+    "근처 사진관",
+    "근처 사진",
+    "네컷사진",
+    "셀프사진관",
+  ],
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: "https://picturehere-mu.vercel.app",
+    siteName: "픽처히어",
+    images: ["/apple-icon.png"],
+    locale: "ko_KR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: ["/apple-icon.png"],
+  },
   other: {
     "naver-site-verification": "4c1680e67defa46812a76cf9d929991e12889aa4",
   },
