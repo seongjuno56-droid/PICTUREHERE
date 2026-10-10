@@ -40,6 +40,7 @@ export const metadata = {
   },
   other: {
     "naver-site-verification": "4c1680e67defa46812a76cf9d929991e12889aa4",
+    "google-site-verification": "AI13bsT_VaczfH4mY8m-oqBVLBOijsaSl9Ipm-bekYU",
   },
 };
 
