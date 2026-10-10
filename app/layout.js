@@ -3,6 +3,9 @@ import "./globals.css";
 export const metadata = {
   title: "픽처히어",
   description: "주변 즉석사진(네컷사진) 매장을 반경별로 찾아보는 지도, 픽처히어",
+  other: {
+    "naver-site-verification": "4c1680e67defa46812a76cf9d929991e12889aa4",
+  },
 };
 
 export default function RootLayout({ children }) {
