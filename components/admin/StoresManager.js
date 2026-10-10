@@ -163,9 +163,16 @@ function StoreFormModal({ initial, onClose, onSaved }) {
           padding: "22px 24px",
         }}
       >
-        <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 18px", color: "var(--text-primary)" }}>
-          {isEdit ? "매장 수정" : "매장 추가"}
-        </h2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "0 0 18px" }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: "var(--text-primary)" }}>
+            {isEdit ? "매장 수정" : "매장 추가"}
+          </h2>
+          {isEdit && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)" }}>
+              조회수 {(initial.view_count ?? 0).toLocaleString("ko-KR")}회
+            </span>
+          )}
+        </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Field label="매장명 *">
@@ -400,7 +407,7 @@ export default function StoresManager() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--divider)" }}>
-              {["매장명", "유형", "브랜드", "지역", "주소", "활성", "등록일", ""].map((h) => (
+              {["매장명", "유형", "브랜드", "지역", "주소", "조회수", "활성", "등록일", ""].map((h) => (
                 <th key={h} style={{ textAlign: "left", padding: "10px 14px", color: "var(--text-tertiary)", fontWeight: 600, whiteSpace: "nowrap" }}>
                   {h}
                 </th>
@@ -410,13 +417,13 @@ export default function StoresManager() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} style={{ padding: 20, color: "var(--text-tertiary)" }}>
+                <td colSpan={9} style={{ padding: 20, color: "var(--text-tertiary)" }}>
                   불러오는 중...
                 </td>
               </tr>
             ) : data.stores.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ padding: 20, color: "var(--text-tertiary)" }}>
+                <td colSpan={9} style={{ padding: 20, color: "var(--text-tertiary)" }}>
                   조건에 맞는 매장이 없어요.
                 </td>
               </tr>
@@ -440,6 +447,9 @@ export default function StoresManager() {
                     {[s.ctprvn_name, s.signgu_name].filter(Boolean).join(" ") || "-"}
                   </td>
                   <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>{s.road_address || s.lot_address || "-"}</td>
+                  <td className="font-mono" style={{ padding: "10px 14px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                    {(s.view_count ?? 0).toLocaleString("ko-KR")}
+                  </td>
                   <td style={{ padding: "10px 14px", color: s.is_active ? "var(--text-secondary)" : "var(--live)" }}>
                     {s.is_active ? "표시" : "숨김"}
                   </td>

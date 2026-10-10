@@ -45,7 +45,7 @@ export async function GET(request) {
   params.push(PAGE_SIZE, (page - 1) * PAGE_SIZE);
   const listRes = await query(
     `select id, bizes_id, name, branch_name, category_name, type, brand, ctprvn_name, signgu_name,
-            road_address, lot_address, lat, lon, phone, is_active, created_at, updated_at
+            road_address, lot_address, lat, lon, phone, is_active, view_count, created_at, updated_at
      from stores ${whereSql}
      order by created_at desc
      limit $${params.length - 1} offset $${params.length}`,

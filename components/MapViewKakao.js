@@ -22,6 +22,11 @@ function estimateWalkMinutes(distanceM) {
   return Math.max(1, Math.round(distanceM / WALK_SPEED_M_PER_MIN));
 }
 
+// 거리/조회수처럼 큰 숫자를 1,697 형태로 — 천 단위 구분 쉼표
+function formatNumber(n) {
+  return Math.round(n || 0).toLocaleString("ko-KR");
+}
+
 // 로드뷰 카메라가 매장을 "바라보게" 돌리기 위한 방위각(0=정북, 시계방향) 계산.
 // 파노라마 실제 좌표 -> 매장 좌표 방향을 구해서 Roadview.setViewpoint({pan})에 넘긴다.
 function computeBearingDeg(lat1, lon1, lat2, lon2) {
@@ -58,6 +63,31 @@ const CENTER_MARKER_SVG = `
 
 function toDataUri(svg) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+// 마커 클릭 시 뜨는 말풍선(CustomOverlay) 내용 — 조회수는 클릭할 때마다 바뀌어서
+// (낙관적 +1 또는 서버 응답) 마커 생성 시점 한 번이 아니라 필요할 때마다 다시 호출해서
+// infowindow.setContent()로 갱신할 수 있도록 별도 함수로 뺐다.
+function buildBubbleContent(store, viewCount) {
+  const title = [store.bizesNm, store.brchNm].filter(Boolean).join(" ");
+  const address = store.rdnmAdr || store.lnoAdr || "";
+  return `
+    <div style="margin-bottom:34px;display:flex;flex-direction:column;align-items:center;">
+      <div style="padding:11px 13px;font-size:13px;line-height:1.5;max-width:260px;font-family:Pretendard,-apple-system,'Apple SD Gothic Neo',sans-serif;background:var(--surface-1);border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,0.35);">
+        <div style="font-weight:700;color:var(--text-primary);margin-bottom:2px;">${title}</div>
+        <div style="color:var(--text-secondary);margin-bottom:7px;">${address}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span style="display:inline-flex;align-items:center;gap:4px;background:var(--brand);color:#FFFFFF;font-weight:700;border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap;">
+            현재 위치에서 ${formatNumber(store.distanceM)}m · 도보 ${estimateWalkMinutes(store.distanceM)}분
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.14);color:#FFFFFF;font-weight:700;border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap;">
+            조회 ${formatNumber(viewCount)}회
+          </span>
+        </div>
+      </div>
+      <div style="width:12px;height:12px;background:var(--surface-1);transform:rotate(45deg);margin-top:-6px;"></div>
+    </div>
+  `;
 }
 
 function useDebouncedValue(value, delayMs) {
@@ -170,7 +200,7 @@ function NearestStoresList({ sdkStatus, visibleStores, category, onSelectStore, 
                   <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>{address}</div>
                   <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
                     <span className="font-mono" style={badgeStyle}>
-                      {store.distanceM}M
+                      {formatNumber(store.distanceM)}M
                     </span>
                     <span className="font-mono" style={badgeStyle}>
                       도보 {minutes}분
@@ -206,6 +236,7 @@ export default function MapViewKakao() {
   const roadviewSectionRef = useRef(null);
   const nearestListSectionRef = useRef(null);
   const [selectedStore, setSelectedStore] = useState(null); // 마커 클릭 시 로드뷰에 띄울 매장
+  const [viewCounts, setViewCounts] = useState({}); // { [bizesId]: 서버가 돌려준 최신 조회수 }
   const [roadviewStatus, setRoadviewStatus] = useState("idle"); // idle | checking | available | unavailable
   const [menuOpen, setMenuOpen] = useState(false); // 모바일 햄버거 드로어
 
@@ -506,8 +537,6 @@ export default function MapViewKakao() {
         map,
         image: getMarkerImage(color),
       });
-      const title = [store.bizesNm, store.brchNm].filter(Boolean).join(" ");
-      const address = store.rdnmAdr || store.lnoAdr || "";
       // 카카오맵/네이버지도 바로가기 버튼은 여기(말풍선) 대신 아래 로드뷰 패널 쪽으로
       // 옮겼다 — 말풍선은 짧게 핵심만, 외부 링크는 상세 정보 영역에 두는 게 자연스러움.
       // kakao.maps.InfoWindow 대신 CustomOverlay를 쓴다 — InfoWindow는 카카오가 자체
@@ -520,18 +549,7 @@ export default function MapViewKakao() {
         xAnchor: 0.5,
         yAnchor: 1,
         clickable: true,
-        content: `
-          <div style="margin-bottom:34px;display:flex;flex-direction:column;align-items:center;">
-            <div style="padding:11px 13px;font-size:13px;line-height:1.5;max-width:250px;font-family:Pretendard,-apple-system,'Apple SD Gothic Neo',sans-serif;background:var(--surface-1);border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,0.35);">
-              <div style="font-weight:700;color:var(--text-primary);margin-bottom:2px;">${title}</div>
-              <div style="color:var(--text-secondary);margin-bottom:7px;">${address}</div>
-              <span style="display:inline-flex;align-items:center;gap:4px;background:var(--brand);color:#FFFFFF;font-weight:700;border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap;">
-                ${store.distanceM}m · 도보 ${estimateWalkMinutes(store.distanceM)}분
-              </span>
-            </div>
-            <div style="width:12px;height:12px;background:var(--surface-1);transform:rotate(45deg);margin-top:-6px;"></div>
-          </div>
-        `,
+        content: buildBubbleContent(store, store.viewCount ?? 0),
       });
       // 다른 마커 클릭 시 이전에 열려 있던 말풍선은 닫고 새로 연다. 이미 열려 있는 마커를
       // 다시 클릭하면(토글) 그냥 닫히기만 하고 새로 열지 않는다.
@@ -543,6 +561,11 @@ export default function MapViewKakao() {
           setSelectedStore(null);
           return;
         }
+        // 조회수는 이 클릭으로 막 +1될 예정이라 낙관적으로 미리 반영해서 보여준다 —
+        // 실제 서버 값은 아래 조회수 증가 useEffect가 비동기로 받아와 viewCounts에
+        // 반영하는데, 숫자가 거의 항상 같아서 티 안 남(동시에 같은 매장을 보는 드문
+        // 경우만 다름).
+        infowindow.setContent(buildBubbleContent(store, (store.viewCount ?? 0) + 1));
         infowindow.setMap(map);
         openInfoWindowRef.current = infowindow;
         setSelectedStore(store);
@@ -573,6 +596,25 @@ export default function MapViewKakao() {
     });
     circleRef.current.setMap(map);
   }, [visibleStores, radiusM, sdkStatus, activeCenter.lat, activeCenter.lon, category, isSearching]);
+
+  // 매장이 선택될 때마다(마커 클릭이든 사이드바 리스트 클릭이든 — 둘 다 selectedStore를
+  // 바꾸는 진입점이라 여기 하나로 통일) 스트릿뷰 상세가 열리는 셈이니 조회수를 1 증가시킨다.
+  // 서버가 돌려준 최신값을 viewCounts에 저장해서 로드뷰 패널과 마커 말풍선 둘 다 반영한다.
+  useEffect(() => {
+    if (!selectedStore?.bizesId) return;
+    const bizesId = selectedStore.bizesId;
+    let cancelled = false;
+    fetch(`/api/stores/${encodeURIComponent(bizesId)}/view`, { method: "POST" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || typeof data.viewCount !== "number") return;
+        setViewCounts((prev) => ({ ...prev, [bizesId]: data.viewCount }));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStore]);
 
   // 선택된 매장이 바뀌면 그 좌표 근처에서 가장 가까운 로드뷰 패노라마를 찾아 띄운다
   useEffect(() => {
@@ -681,22 +723,6 @@ export default function MapViewKakao() {
 
   return (
     <div className="page-shell">
-      {/* PC 전용 좌측 브랜드 패널 — 검색 조건 UI가 이 안에 도킹된다 */}
-      <BrandPanel
-        nearestList={
-          <NearestStoresList
-            sdkStatus={sdkStatus}
-            visibleStores={visibleStores}
-            category={category}
-            onSelectStore={setSelectedStore}
-            activeCenterLabel={activeCenter.label}
-            radiusM={radiusM}
-          />
-        }
-      >
-        <SearchControls {...searchControlsProps} />
-      </BrandPanel>
-
       <div className="app-frame">
         {/* 예전엔 로드뷰/리스트가 이 안에 같이 있어서 minHeight:100vh로 전체 화면을
             채웠지만, 지금은 로드뷰가 형제 섹션(.roadview-panel)으로 빠져나가서 이 div엔
@@ -896,117 +922,156 @@ export default function MapViewKakao() {
         </div>
       </div>
 
-      {/* 로드뷰 패널 — app-frame(지도)과 형제 엘리먼트. 카카오 로드뷰는 DOM 하나에 묶이는
-          위젯이라 두 군데에 동시에 그릴 수 없어서, 같은 엘리먼트 하나를 CSS(grid-area)로
-          breakpoint별 위치만 바꾼다: 모바일은 지도 바로 아래, PC는 좌측 사이드바 하단
-          (지도는 그 사이 우측 전체를 꽉 채움). */}
-      <section ref={roadviewSectionRef} className="roadview-panel">
-        <div
-          className="font-mono"
-          style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-tertiary)", marginBottom: 6 }}
-        >
-          STREET VIEW
+      {/* PC 사이드바 전체(검색헤더+결과리스트+로드뷰+푸터)를 하나의 연속 스크롤로 묶는
+          래퍼 — globals.css .sidebar-scroll이 모바일에선 display:contents라 아래
+          자식들이 각자 CSS대로(브랜드패널/PC리스트는 숨김, 로드뷰는 지도 바로 밑에)
+          그대로 문서 흐름에 놓이고, PC에서만 실제 스크롤 컨테이너가 된다. */}
+      <div className="sidebar-scroll">
+        {/* PC 전용 좌측 상단 — 검색 조건 UI가 이 안에 도킹되고, 스크롤해도 맨 위에 고정된다 */}
+        <BrandPanel>
+          <SearchControls {...searchControlsProps} />
+        </BrandPanel>
+
+        {/* PC 전용 결과 리스트 — 모바일은 지도 밑 별도 섹션(아래 .mobile-only)에서 같은
+            컴포넌트를 독립적으로 또 렌더링한다(두 리스트는 서로 다른 React 엘리먼트라
+            로드뷰와 달리 "DOM 하나 공유" 제약이 없음). */}
+        <div className="pc-only" style={{ padding: "16px 20px" }}>
+          <NearestStoresList
+            sdkStatus={sdkStatus}
+            visibleStores={visibleStores}
+            category={category}
+            onSelectStore={setSelectedStore}
+            activeCenterLabel={activeCenter.label}
+            radiusM={radiusM}
+          />
         </div>
-        <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
-          {selectedStore ? [selectedStore.bizesNm, selectedStore.brchNm].filter(Boolean).join(" ") : "매장 로드뷰"}
-        </h2>
-        <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 10px" }}>
-          {selectedStore
-            ? selectedStore.rdnmAdr || selectedStore.lnoAdr || ""
-            : "지도에서 마커를 클릭하면 이 위치의 로드뷰를 보여드려요."}
-        </p>
 
-        {/* 외부 지도에서 같은 매장명으로 바로 검색되는 결과 페이지 링크 — 각 서비스 CI
-            컬러로 버튼 구분(카카오 옐로우/네이버 그린), 둘 다 실제 접속해서 검색결과
-            뜨는 것까지 확인함. 말풍선 대신 여기(로드뷰 상세 영역)에 둔다. */}
-        {selectedStore &&
-          (() => {
-            const mapQuery = encodeURIComponent(
-              [selectedStore.bizesNm, selectedStore.brchNm].filter(Boolean).join(" ")
-            );
-            const kakaoMapUrl = `https://map.kakao.com/?q=${mapQuery}`;
-            const naverMapUrl = `https://map.naver.com/p/search/${mapQuery}`;
-            return (
-              <div style={{ display: "flex", gap: 6, margin: "0 0 14px" }}>
-                <a
-                  href={kakaoMapUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    flex: 1,
-                    textAlign: "center",
-                    background: "#FEE500",
-                    color: "#191919",
-                    fontWeight: 700,
-                    fontSize: 12,
-                    borderRadius: 6,
-                    padding: "8px 0",
-                    textDecoration: "none",
-                  }}
-                >
-                  카카오맵에서 보기
-                </a>
-                <a
-                  href={naverMapUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    flex: 1,
-                    textAlign: "center",
-                    background: "#03C75A",
-                    color: "#FFFFFF",
-                    fontWeight: 700,
-                    fontSize: 12,
-                    borderRadius: 6,
-                    padding: "8px 0",
-                    textDecoration: "none",
-                  }}
-                >
-                  네이버지도에서 보기
-                </a>
-              </div>
-            );
-          })()}
+        {/* 로드뷰 패널 — 카카오 로드뷰는 DOM 하나에 묶이는 위젯이라 두 군데에 동시에
+            그릴 수 없어서, 같은 엘리먼트 하나를 CSS로 breakpoint별 위치만 바꾼다:
+            모바일은 지도 바로 아래(.sidebar-scroll이 display:contents라 제자리),
+            PC는 좌측 사이드바 스크롤 안, 리스트 바로 밑. */}
+        <section ref={roadviewSectionRef} className="roadview-panel">
+          <div
+            className="font-mono"
+            style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-tertiary)", marginBottom: 6 }}
+          >
+            STREET VIEW
+          </div>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
+            {selectedStore ? [selectedStore.bizesNm, selectedStore.brchNm].filter(Boolean).join(" ") : "매장 로드뷰"}
+          </h2>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 10px" }}>
+            {selectedStore
+              ? selectedStore.rdnmAdr || selectedStore.lnoAdr || ""
+              : "지도에서 마커를 클릭하면 이 위치의 로드뷰를 보여드려요."}
+          </p>
 
-        <div className="roadview-canvas-wrap">
-          <div ref={roadviewContainerRef} style={{ width: "100%", height: "100%" }} />
-
-          {(!selectedStore || roadviewStatus === "checking" || roadviewStatus === "unavailable") && (
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--text-secondary)",
-                fontSize: 13,
-                textAlign: "center",
-                padding: 24,
-                background: "rgba(10,14,26,0.9)",
-              }}
-            >
-              {!selectedStore && "지도에서 매장 마커를 클릭해보세요"}
-              {selectedStore && roadviewStatus === "checking" && "로드뷰 확인 중..."}
-              {selectedStore && roadviewStatus === "unavailable" && "이 위치는 로드뷰를 제공하지 않아요."}
+          {/* 거리/도보시간/조회수 — "현재 위치에서"를 명시해서 기준점이 뭔지 분명하게 하고,
+              조회수는 selectedStore가 바뀔 때마다 아래 useEffect가 증가시킨 최신값을
+              viewCounts에서 읽는다(응답 오기 전까진 +1 낙관값으로 보여줘서 깜빡임 방지). */}
+          {selectedStore && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0 0 14px" }}>
+              <span className="font-mono" style={badgeStyle}>
+                현재 위치에서 {formatNumber(selectedStore.distanceM)}m · 도보 {estimateWalkMinutes(selectedStore.distanceM)}분
+              </span>
+              <span className="font-mono" style={badgeStyle}>
+                조회 {formatNumber(viewCounts[selectedStore.bizesId] ?? (selectedStore.viewCount ?? 0) + 1)}회
+              </span>
             </div>
           )}
-        </div>
-      </section>
 
-      {/* 조용한 정보 푸터(반경/출처/버전) — PC 사이드바의 진짜 맨 아래(로드뷰 밑, 그리드 3번째
-          행)에만 보인다. 모바일은 햄버거 메뉴 안에 같은 내용이 이미 있어서 숨김(globals.css). */}
-      <div className="sidebar-footer">
-        <p style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.7, margin: 0 }}>
-          검색 반경 {(radiusM / 1000).toFixed(0)}km · 공공데이터포털 · 카카오맵
-          <br />
-          도보 시간은 직선거리 기준 추정치예요
-          <br />v{APP_VERSION} · {LAST_UPDATED} 업데이트
-        </p>
+          {/* 외부 지도에서 같은 매장명으로 바로 검색되는 결과 페이지 링크 — 각 서비스 CI
+              컬러로 버튼 구분(카카오 옐로우/네이버 그린), 둘 다 실제 접속해서 검색결과
+              뜨는 것까지 확인함. 말풍선 대신 여기(로드뷰 상세 영역)에 둔다. */}
+          {selectedStore &&
+            (() => {
+              const mapQuery = encodeURIComponent(
+                [selectedStore.bizesNm, selectedStore.brchNm].filter(Boolean).join(" ")
+              );
+              const kakaoMapUrl = `https://map.kakao.com/?q=${mapQuery}`;
+              const naverMapUrl = `https://map.naver.com/p/search/${mapQuery}`;
+              return (
+                <div style={{ display: "flex", gap: 6, margin: "0 0 14px" }}>
+                  <a
+                    href={kakaoMapUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      background: "#FEE500",
+                      color: "#191919",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      borderRadius: 6,
+                      padding: "8px 0",
+                      textDecoration: "none",
+                    }}
+                  >
+                    카카오맵에서 보기
+                  </a>
+                  <a
+                    href={naverMapUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      background: "#03C75A",
+                      color: "#FFFFFF",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      borderRadius: 6,
+                      padding: "8px 0",
+                      textDecoration: "none",
+                    }}
+                  >
+                    네이버지도에서 보기
+                  </a>
+                </div>
+              );
+            })()}
+
+          <div className="roadview-canvas-wrap">
+            <div ref={roadviewContainerRef} style={{ width: "100%", height: "100%" }} />
+
+            {(!selectedStore || roadviewStatus === "checking" || roadviewStatus === "unavailable") && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--text-secondary)",
+                  fontSize: 13,
+                  textAlign: "center",
+                  padding: 24,
+                  background: "rgba(10,14,26,0.9)",
+                }}
+              >
+                {!selectedStore && "지도에서 매장 마커를 클릭해보세요"}
+                {selectedStore && roadviewStatus === "checking" && "로드뷰 확인 중..."}
+                {selectedStore && roadviewStatus === "unavailable" && "이 위치는 로드뷰를 제공하지 않아요."}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* 조용한 정보 푸터(반경/출처/버전) — PC 사이드바 스크롤의 진짜 맨 아래에만 보인다.
+            모바일은 햄버거 메뉴 안에 같은 내용이 이미 있어서 숨김(globals.css). */}
+        <div className="sidebar-footer">
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.7, margin: 0 }}>
+            검색 반경 {(radiusM / 1000).toFixed(0)}km · 공공데이터포털 · 카카오맵
+            <br />
+            도보 시간은 직선거리 기준 추정치예요
+            <br />v{APP_VERSION} · {LAST_UPDATED} 업데이트
+          </p>
+        </div>
       </div>
 
       {/* 지도 아래 — 내 근처 가장 가까운 매장. PC에서는 같은 리스트를 좌측 사이드바
-          (BrandPanel의 nearestList)에 따로 렌더링하므로, 여긴 모바일 전용으로 숨긴다. */}
+          (.sidebar-scroll 안의 pc-only 블록)에 따로 렌더링하므로, 여긴 모바일 전용으로 숨긴다. */}
       <section ref={nearestListSectionRef} className="mobile-only" style={{ padding: "36px 20px 56px" }}>
         <div style={{ maxWidth: 720, margin: "0 auto" }}>
           <NearestStoresList

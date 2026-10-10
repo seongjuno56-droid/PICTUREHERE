@@ -37,12 +37,13 @@ function toStoreShape(item) {
     lat: Number(item.lat),
     lon: Number(item.lon),
     distanceM: Math.round(item.distanceM),
+    viewCount: Number(item.viewCount) || 0,
   };
 }
 
 const STORE_COLUMNS = `bizes_id as "bizesId", name as "bizesNm", branch_name as "brchNm",
             category_name as "indsSclsNm", type, brand, road_address as "rdnmAdr",
-            lot_address as "lnoAdr", lat, lon`;
+            lot_address as "lnoAdr", lat, lon, view_count as "viewCount"`;
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);

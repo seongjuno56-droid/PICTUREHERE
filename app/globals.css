@@ -92,6 +92,14 @@ select option {
   display: none;
 }
 
+/* PC 사이드바(검색헤더+결과리스트+로드뷰+푸터)를 하나의 연속 스크롤로 묶는 래퍼.
+   모바일에서는 display:contents로 자기 자신은 레이아웃에서 사라지고, 안의 자식들이
+   각자의 CSS(.brand-panel은 숨김, .roadview-panel은 지도 밑 제자리, .sidebar-footer는
+   숨김)대로 그대로 문서 흐름에 놓인다 — 모바일 쪽 배치는 이 전과 동일하게 유지됨. */
+.sidebar-scroll {
+  display: contents;
+}
+
 .app-frame {
   width: 100%;
 }
@@ -125,32 +133,45 @@ select option {
 }
 
 @media (min-width: 1024px) {
-  /* 좌측 420px 고정 사이드바(위→아래: 검색+결과 리스트 / 로드뷰 / 조용한 정보 푸터) +
-     우측 지도가 나머지 전체를 꽉 채우는 2열 3행 그리드. 지도는 세 행에 걸쳐 전체
-     높이로 확장된다. 푸터(.sidebar-footer)는 브랜드 패널의 "중간"이 아니라 로드뷰
-     밑, 사이드바 진짜 맨 아래에 와야 해서 별도 그리드 행으로 뺐다. */
+  /* 좌측 420px 사이드바 + 우측 지도, 2열 1행 그리드. 전엔 사이드바 안을 "결과리스트
+     / 로드뷰 / 푸터" 3개 그리드 행으로 쪼개서 각자 overflow-y:auto를 따로 줬는데,
+     그러면 리스트를 끝까지 스크롤해도 로드뷰 쪽으로 안 이어지고 뚝 끊겨서 마치
+     "섹션별로 스크롤되는" 것처럼 버벅였다. 이제 사이드바 전체(.sidebar-scroll)를
+     하나의 스크롤 컨테이너로 묶어서 검색헤더만 sticky로 위에 붙이고, 결과리스트→
+     로드뷰→푸터가 한 번의 연속 스크롤로 자연스럽게 이어지게 했다. */
   .page-shell {
     display: grid;
     grid-template-columns: 420px 1fr;
-    grid-template-rows: 1fr 320px auto;
+    grid-template-rows: 1fr;
     height: 100vh;
     overflow: hidden;
+  }
+
+  .sidebar-scroll {
+    display: flex;
+    flex-direction: column;
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+    overflow-y: auto;
+    border-right: 1px solid var(--divider);
   }
 
   .brand-panel {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    grid-column: 1;
-    grid-row: 1;
-    min-height: 0;
-    border-right: 1px solid var(--divider);
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--canvas);
     border-bottom: 1px solid var(--divider);
   }
 
   .app-frame {
     grid-column: 2;
-    grid-row: 1 / 4;
+    grid-row: 1;
     width: auto;
     height: 100%;
     margin: 0;
@@ -167,13 +188,10 @@ select option {
   }
 
   .roadview-panel {
-    grid-column: 1;
-    grid-row: 2;
     max-width: none;
     margin: 0;
     padding: 16px 20px;
-    overflow-y: auto;
-    min-height: 0;
+    border-top: 1px solid var(--divider);
   }
 
   .roadview-canvas-wrap {
@@ -182,11 +200,9 @@ select option {
 
   .sidebar-footer {
     display: block;
-    grid-column: 1;
-    grid-row: 3;
-    border-right: 1px solid var(--divider);
     border-top: 1px solid var(--divider);
     padding: 14px 20px;
+    flex-shrink: 0;
   }
 
   /* PC에서는 검색 조건/결과 리스트가 좌측 사이드바 쪽에 도킹되므로, 모바일 전용

@@ -23,6 +23,7 @@ create table if not exists stores (
 alter table stores add column if not exists brand text; -- 포토부스 프랜차이즈 브랜드명(lib/photoBoothBrands.js 매칭). 사진관은 항상 null → UI에서 "-" 표시
 alter table stores add column if not exists ctprvn_name text; -- 시/도
 alter table stores add column if not exists signgu_name text; -- 시/군/구
+alter table stores add column if not exists view_count integer not null default 0; -- 마커/스트릿뷰 상세 조회수
 
 create index if not exists idx_stores_type on stores (type);
 create index if not exists idx_stores_created_at on stores (created_at desc);

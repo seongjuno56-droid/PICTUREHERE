@@ -51,7 +51,7 @@ export async function PATCH(request, { params }) {
   const { rows } = await query(
     `update stores set ${setClauses.join(", ")}
      where id = $${values.length}
-     returning id, bizes_id, name, branch_name, category_name, type, brand, ctprvn_name, signgu_name, road_address, lot_address, lat, lon, phone, is_active, created_at, updated_at`,
+     returning id, bizes_id, name, branch_name, category_name, type, brand, ctprvn_name, signgu_name, road_address, lot_address, lat, lon, phone, is_active, view_count, created_at, updated_at`,
     values
   );
 
