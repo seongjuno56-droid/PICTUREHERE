@@ -496,7 +496,7 @@ export default function MapViewKakao() {
     }
 
     markersRef.current.forEach((m) => m.setMap(null));
-    openInfoWindowRef.current?.close();
+    openInfoWindowRef.current?.setMap(null);
     openInfoWindowRef.current = null;
 
     markersRef.current = visibleStores.map((store) => {
@@ -510,14 +510,26 @@ export default function MapViewKakao() {
       const address = store.rdnmAdr || store.lnoAdr || "";
       // 카카오맵/네이버지도 바로가기 버튼은 여기(말풍선) 대신 아래 로드뷰 패널 쪽으로
       // 옮겼다 — 말풍선은 짧게 핵심만, 외부 링크는 상세 정보 영역에 두는 게 자연스러움.
-      const infowindow = new kakao.maps.InfoWindow({
+      // kakao.maps.InfoWindow 대신 CustomOverlay를 쓴다 — InfoWindow는 카카오가 자체
+      // 프레임으로 감싸서 꼬리(마커와 맞닿는 뾰족한 부분)를 우리 배경색에 맞게 커스텀하기
+      // 어렵다. CustomOverlay는 순수 우리 HTML/CSS 그대로 그려줘서 색이 맞는 꼬리를 직접
+      // 그릴 수 있다 — margin-bottom으로 마커 높이(30px)만큼 띄워서 꼬리 끝이 마커 바로
+      // 위에서 만나도록 하고, 꼬리는 본체와 같은 배경색의 45도 회전 정사각형으로 만든다.
+      const infowindow = new kakao.maps.CustomOverlay({
+        position: new kakao.maps.LatLng(store.lat, store.lon),
+        xAnchor: 0.5,
+        yAnchor: 1,
+        clickable: true,
         content: `
-          <div style="padding:11px 13px;font-size:13px;line-height:1.5;max-width:250px;font-family:Pretendard,-apple-system,'Apple SD Gothic Neo',sans-serif;background:var(--surface-1);">
-            <div style="font-weight:700;color:var(--text-primary);margin-bottom:2px;">${title}</div>
-            <div style="color:var(--text-secondary);margin-bottom:7px;">${address}</div>
-            <span style="display:inline-flex;align-items:center;gap:4px;background:var(--brand);color:#FFFFFF;font-weight:700;border-radius:6px;padding:3px 8px;font-size:12px;">
-              ${store.distanceM}m · 도보 ${estimateWalkMinutes(store.distanceM)}분
-            </span>
+          <div style="margin-bottom:34px;display:flex;flex-direction:column;align-items:center;">
+            <div style="padding:11px 13px;font-size:13px;line-height:1.5;max-width:250px;font-family:Pretendard,-apple-system,'Apple SD Gothic Neo',sans-serif;background:var(--surface-1);border-radius:10px;box-shadow:0 8px 20px rgba(0,0,0,0.35);">
+              <div style="font-weight:700;color:var(--text-primary);margin-bottom:2px;">${title}</div>
+              <div style="color:var(--text-secondary);margin-bottom:7px;">${address}</div>
+              <span style="display:inline-flex;align-items:center;gap:4px;background:var(--brand);color:#FFFFFF;font-weight:700;border-radius:6px;padding:3px 8px;font-size:12px;white-space:nowrap;">
+                ${store.distanceM}m · 도보 ${estimateWalkMinutes(store.distanceM)}분
+              </span>
+            </div>
+            <div style="width:12px;height:12px;background:var(--surface-1);transform:rotate(45deg);margin-top:-6px;"></div>
           </div>
         `,
       });
@@ -525,13 +537,13 @@ export default function MapViewKakao() {
       // 다시 클릭하면(토글) 그냥 닫히기만 하고 새로 열지 않는다.
       kakao.maps.event.addListener(marker, "click", () => {
         const wasOpen = openInfoWindowRef.current === infowindow;
-        openInfoWindowRef.current?.close();
+        openInfoWindowRef.current?.setMap(null);
         openInfoWindowRef.current = null;
         if (wasOpen) {
           setSelectedStore(null);
           return;
         }
-        infowindow.open(map, marker);
+        infowindow.setMap(map);
         openInfoWindowRef.current = infowindow;
         setSelectedStore(store);
       });
@@ -604,7 +616,7 @@ export default function MapViewKakao() {
     if (!kakao || !map) return;
     // 열려 있던 마커 말풍선/선택 상태도 같이 정리 — 안 그러면 기준 위치로 돌아가도
     // 전에 클릭했던 매장 말풍선이 그대로 떠 있었다
-    openInfoWindowRef.current?.close();
+    openInfoWindowRef.current?.setMap(null);
     openInfoWindowRef.current = null;
     setSelectedStore(null);
     // "현 지도에서 검색"으로 잡아둔 임시 기준점 + 선택해둔 역 기준점도 같이 해제 —
