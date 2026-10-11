@@ -9,6 +9,10 @@ export const metadata = {
   title: SITE_TITLE,
   description: SITE_DESCRIPTION,
   keywords: [
+    "픽처히어",
+    "히어픽처",
+    "픽처픽처",
+    "픽처",
     "포토부스",
     "근처 포토부스",
     "인생네컷",
