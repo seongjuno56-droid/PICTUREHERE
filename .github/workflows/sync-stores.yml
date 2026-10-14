@@ -1,0 +1,51 @@
+# 매장 데이터 정기 갱신 — 소상공인 상가정보 API로 전국 사진촬영업 매장을 다시 수집해 DB에 반영한다.
+# 실제 로직은 scripts/syncStores.js. 수집이 덜 됐거나 이상하면 DB를 건드리지 않고 실패로 끝난다.
+#
+# 처음 한 번 설정: GitHub 저장소 > Settings > Secrets and variables > Actions > New repository secret
+#   DATA_GO_KR_SERVICE_KEY : 공공데이터포털 상가(상권)정보 일반 인증키(Decoding)
+#   DATABASE_URL           : Supabase Postgres 접속 주소(Vercel 환경변수와 같은 값)
+#
+# 수동 실행: Actions 탭 > "매장 데이터 갱신" > Run workflow (처음엔 dry_run 체크해서 미리보기 권장)
+name: 매장 데이터 갱신
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "미리보기만 (수집·집계만 하고 DB에는 저장하지 않음)"
+        type: boolean
+        default: true
+  schedule:
+    # 분기마다(1·4·7·10월) 5일 새벽 3시(KST) — cron은 UTC 기준이라 전날 18시
+    - cron: "0 18 4 1,4,7,10 *"
+
+# 같은 갱신이 겹쳐서 돌지 않도록
+concurrency:
+  group: sync-stores
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # 빈 컬럼 추가뿐이라(if not exists) 미리보기 때도 실행 — 안 하면 첫 미리보기가 컬럼 없음으로 실패
+      - name: DB 스키마 최신화 (컬럼 추가분 반영, 여러 번 실행해도 안전)
+        run: node scripts/initSchema.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: 전국 수집 + DB 반영
+        run: node scripts/syncStores.js ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
+        env:
+          DATA_GO_KR_SERVICE_KEY: ${{ secrets.DATA_GO_KR_SERVICE_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
