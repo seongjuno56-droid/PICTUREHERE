@@ -104,17 +104,20 @@ function useDebouncedValue(value, delayMs) {
  * 사이드바(BrandPanel)의 결과 리스트로 — 같은 컴포넌트를 두 자리에 그대로 재사용한다
  * (네이버지도 데스크톱의 "검색 결과 리스트" 자리 참고).
  */
-function NearestStoresList({ sdkStatus, visibleStores, category, onSelectStore, activeCenterLabel, radiusM }) {
+function NearestStoresList({ sdkStatus, visibleStores, category, onSelectStore, activeCenterLabel, radiusM, regionLabel }) {
+  const kindLabel = category === "booth" ? "포토부스" : "사진관";
   return (
     <div>
       <div
         className="font-mono"
         style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "var(--text-tertiary)", marginBottom: 6 }}
       >
-        {activeCenterLabel.toUpperCase()} · {(radiusM / 1000).toFixed(0)}KM RADIUS
+        {regionLabel
+          ? `${regionLabel} · ${formatNumber(visibleStores.length)}곳`
+          : `${activeCenterLabel.toUpperCase()} · ${(radiusM / 1000).toFixed(0)}KM RADIUS`}
       </div>
       <h2 style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px" }}>
-        내 근처 가장 가까운 {category === "booth" ? "포토부스" : "사진관"}
+        {regionLabel ? `${regionLabel}에서 가까운 ${kindLabel}` : `내 근처 가장 가까운 ${kindLabel}`}
       </h2>
       <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "0 0 16px" }}>
         도보 시간은 직선거리로 추정한 값이라 실제와 다를 수 있어요
@@ -131,7 +134,7 @@ function NearestStoresList({ sdkStatus, visibleStores, category, onSelectStore, 
             borderRadius: "var(--radius-lg)",
           }}
         >
-          이 근처에는 아직 수집된 {category === "booth" ? "포토부스" : "사진관"} 데이터가 없어요.
+          {regionLabel ? "이 지역에는" : "이 근처에는"} 아직 수집된 {kindLabel} 데이터가 없어요.
         </div>
       )}
 
@@ -341,32 +344,50 @@ export default function MapViewKakao() {
   // 포토부스 브랜드 필터 — 사진관엔 브랜드 개념이 없어서 category==="booth"일 때만 쓰인다
   const [brandFilter, setBrandFilter] = useState("");
 
-  // 검색 조건: 내주변/빠른검색/상세검색 3단 구분, 매장명/지역/역 3개 탭 전부 UX상 굳이여서
-  // 없앴다 — 입력창 하나(searchQuery)로 매장명/지점명/주소/시도/시군구를 한꺼번에 찾는
-  // 서버 통합검색(/api/stores?region=)과 역 자동완성(/api/stations?q=)을 동시에 돌린다.
-  // 입력값이 비어 있으면 그 자체로 "필터 없음 = 내 주변 전체"가 되므로 별도 모드가 필요 없다.
-  const [searchQuery, setSearchQuery] = useState("");
+  // 검색 조건: 역 검색 / 지역 검색 / 매장 검색 3탭. 탭을 바꾸면 다른 탭에서 잡아둔 기준
+  // (선택한 역/지역/매장)은 해제된다 — 한 번에 하나의 기준만 지도에 반영하기 위함.
+  const [searchMode, setSearchMode] = useState("station"); // station | region | store
+
+  // 역 검색: 역 이름 자동완성(/api/stations) → 고르면 그 역 기준 반경 검색
+  const [stationQuery, setStationQuery] = useState("");
   const [stationResults, setStationResults] = useState([]);
   const [stationLoading, setStationLoading] = useState(false);
   const [stationError, setStationError] = useState(null);
   const [selectedStation, setSelectedStation] = useState(null); // {name,lat,lon}
+  const debouncedStationQuery = useDebouncedValue(stationQuery, 350);
 
-  const debouncedSearchQuery = useDebouncedValue(searchQuery, 350);
-  // 검색어가 있을 때만 "전국 통합 검색 모드"로 전환(반경 무시) — 단, 역을 이미 선택한
-  // 뒤라면 입력창엔 역 이름이 그대로 남아있어도 그건 "역 기준 반경 검색"이지 텍스트
-  // 검색이 아니므로 제외한다(선택한 역 좌표 중심으로 반경 원 검색을 계속 써야 함).
-  const isSearching = !selectedStation && debouncedSearchQuery.trim().length > 0;
+  // 지역 검색: 시/도 + 시/군/구 셀렉트 → "검색" 버튼을 눌러야 적용(appliedRegion)
+  const [regions, setRegions] = useState([]); // [{ctprvn, signgus: []}]
+  const [regionsError, setRegionsError] = useState(null);
+  const [ctprvn, setCtprvnState] = useState("");
+  const [signgu, setSigngu] = useState("");
+  const [appliedRegion, setAppliedRegion] = useState(null); // {ctprvn, signgu}
+
+  // 매장 검색: 매장명 자동완성(/api/stores?name=) → 고르면 그 매장 기준 반경 검색 + 로드뷰
+  const [storeQuery, setStoreQuery] = useState("");
+  const [storeResults, setStoreResults] = useState([]);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeError, setStoreError] = useState(null);
+  const [storeSearched, setStoreSearched] = useState(false); // 결과 0개일 때 "없어요" 안내용
+  const [pickedStore, setPickedStore] = useState(null);
+  const debouncedStoreQuery = useDebouncedValue(storeQuery, 300);
+
+  // 지역 검색이 적용돼 있으면 반경 무시하고 그 지역 매장 전체를 보여준다
+  const isRegionSearch = appliedRegion != null;
+  const regionLabel = appliedRegion ? [appliedRegion.ctprvn, appliedRegion.signgu].filter(Boolean).join(" ") : null;
 
   // "현 지도에서 검색" — 사용자가 지도를 직접 드래그해서 본 위치. 네이버지도처럼, 드래그 후
   // 버튼을 눌러야만 그 위치로 실제 검색이 넘어간다(드래그할 때마다 자동 재검색하지 않음).
   const [searchCenterOverride, setSearchCenterOverride] = useState(null); // {lat, lon} — 버튼 클릭으로 확정된 위치
   const [mapDragCenter, setMapDragCenter] = useState(null); // {lat, lon} — 드래그 직후 실시간 지도 중심(버튼 노출 판단용)
 
-  // 중심 좌표 우선순위: 지도에서 직접 검색(명시적 행동) > 역 선택(명시적 행동) > 내 위치(권한 허용 시) > 기본 위치
+  // 중심 좌표 우선순위: 지도에서 직접 검색(명시적 행동) > 역/매장 선택(명시적 행동) > 내 위치(권한 허용 시) > 기본 위치
   const activeCenter = searchCenterOverride
     ? { lat: searchCenterOverride.lat, lon: searchCenterOverride.lon, label: "이 지역" }
     : selectedStation
     ? { lat: selectedStation.lat, lon: selectedStation.lon, label: selectedStation.name }
+    : pickedStore
+    ? { lat: pickedStore.lat, lon: pickedStore.lon, label: [pickedStore.bizesNm, pickedStore.brchNm].filter(Boolean).join(" ") }
     : geoCenter
     ? { lat: geoCenter.lat, lon: geoCenter.lon, label: "내 위치" }
     : DEFAULT_CENTER;
@@ -432,19 +453,18 @@ export default function MapViewKakao() {
     setSdkError("카카오맵 SDK 스크립트 로드 실패 (네트워크 또는 도메인 등록 문제일 수 있음)");
   };
 
-  // 역 자동완성: 통합 검색어가 있고 아직 역을 선택하지 않았을 때만 /api/stations 조회
-  // (매장명/주소 검색은 /api/stores?region=이 같은 검색어로 별도 처리하므로 여기선
-  // 역 이름 매칭만 담당 — 결과가 있으면 드롭다운에 같이 노출된다).
+  // 역 자동완성: 역 탭에서 입력값이 있고 아직 역을 선택하지 않았을 때만 /api/stations 조회
   useEffect(() => {
-    if (!debouncedSearchQuery.trim() || selectedStation) {
+    if (!debouncedStationQuery.trim() || selectedStation) {
       setStationResults([]);
+      setStationError(null);
       return;
     }
     let cancelled = false;
     setStationLoading(true);
     setStationError(null);
 
-    fetch(`/api/stations?q=${encodeURIComponent(debouncedSearchQuery.trim())}`)
+    fetch(`/api/stations?q=${encodeURIComponent(debouncedStationQuery.trim())}`)
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
@@ -457,17 +477,69 @@ export default function MapViewKakao() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedSearchQuery, selectedStation]);
+  }, [debouncedStationQuery, selectedStation]);
 
-  // 중심 좌표(기본값 또는 선택한 역)/반경/지역검색어가 바뀔 때마다 /api/stores 재조회.
-  // "상세검색 > 지역"에 검색어가 있으면 반경 무시하고 전국 주소 텍스트 검색(region=)으로 전환.
+  // 매장명 자동완성: 매장 탭에서 입력값이 있고 아직 매장을 고르지 않았을 때만 조회.
+  // 가까운 순 정렬 기준점은 내 위치(없으면 기본 위치) — 선택한 매장 좌표가 아니다.
+  const nameSearchOrigin = geoCenter ?? DEFAULT_CENTER;
+  useEffect(() => {
+    if (!debouncedStoreQuery.trim() || pickedStore) {
+      setStoreResults([]);
+      setStoreError(null);
+      setStoreSearched(false);
+      return;
+    }
+    let cancelled = false;
+    setStoreLoading(true);
+    setStoreError(null);
+
+    fetch(
+      `/api/stores?name=${encodeURIComponent(debouncedStoreQuery.trim())}&lat=${nameSearchOrigin.lat}&lon=${nameSearchOrigin.lon}`
+    )
+      .then((res) => {
+        if (!res.ok) throw new Error(`API 오류: ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setStoreResults(data.stores ?? []);
+        setStoreSearched(true);
+      })
+      .catch((err) => !cancelled && setStoreError(err.message))
+      .finally(() => !cancelled && setStoreLoading(false));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedStoreQuery, pickedStore, nameSearchOrigin.lat, nameSearchOrigin.lon]);
+
+  // 지역 셀렉트 박스 옵션 — 처음 한 번만 받아온다
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/regions")
+      .then((res) => {
+        if (!res.ok) throw new Error(`지역 목록을 불러오지 못했어요 (${res.status})`);
+        return res.json();
+      })
+      .then((data) => !cancelled && setRegions(data.regions ?? []))
+      .catch((err) => !cancelled && setRegionsError(err.message));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 중심 좌표(기본값/선택한 역/매장)/반경이 바뀌거나 지역 검색이 적용될 때마다 /api/stores 재조회.
+  // 지역 검색이 적용돼 있으면 반경 무시하고 그 지역 매장 전체(ctprvn/signgu)로 전환.
   useEffect(() => {
     if (sdkStatus !== "ready") return;
+    let cancelled = false;
     setLoading(true);
     setFetchError(null);
 
-    const url = isSearching
-      ? `/api/stores?region=${encodeURIComponent(debouncedSearchQuery.trim())}&lat=${activeCenter.lat}&lon=${activeCenter.lon}`
+    const url = isRegionSearch
+      ? `/api/stores?ctprvn=${encodeURIComponent(appliedRegion.ctprvn)}&signgu=${encodeURIComponent(
+          appliedRegion.signgu || ""
+        )}&lat=${activeCenter.lat}&lon=${activeCenter.lon}`
       : `/api/stores?radius=${radiusM}&lat=${activeCenter.lat}&lon=${activeCenter.lon}`;
 
     fetch(url)
@@ -475,10 +547,14 @@ export default function MapViewKakao() {
         if (!res.ok) throw new Error(`API 오류: ${res.status}`);
         return res.json();
       })
-      .then((data) => setStores(data.stores))
-      .catch((err) => setFetchError(err.message))
-      .finally(() => setLoading(false));
-  }, [radiusM, sdkStatus, activeCenter.lat, activeCenter.lon, isSearching, debouncedSearchQuery]);
+      .then((data) => !cancelled && setStores(data.stores))
+      .catch((err) => !cancelled && setFetchError(err.message))
+      .finally(() => !cancelled && setLoading(false));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [radiusM, sdkStatus, activeCenter.lat, activeCenter.lon, isRegionSearch, appliedRegion]);
 
   // 지도 중심 마커/뷰를 activeCenter에 맞춰 이동. 서울 기본값 → 내 위치로 처음 바뀌는
   // 순간만 애니메이션 없이 즉시 이동(아무 관련도 없는 먼 거리를 주르륵 이동하는 느낌 방지),
@@ -503,9 +579,8 @@ export default function MapViewKakao() {
     }
   }, [activeCenter.lat, activeCenter.lon, geoCenter]);
 
-  // 매장 종류(포토부스/사진관) + 브랜드 조건으로 클라이언트 단에서 필터링. 통합 검색어
-  // 매칭은 이미 서버(/api/stores?region=)가 매장명/주소/지역 기준으로 걸러서 내려주므로
-  // 여기서 다시 텍스트 필터링하지 않는다.
+  // 매장 종류(포토부스/사진관) + 브랜드 조건으로 클라이언트 단에서 필터링. 지역 검색
+  // 매칭은 이미 서버(/api/stores?ctprvn=)가 걸러서 내려주므로 여기서 다시 하지 않는다.
   const visibleStores = useMemo(() => {
     const byCategory = stores.filter((s) => s.type === category);
     return category === "booth" && brandFilter
@@ -575,8 +650,8 @@ export default function MapViewKakao() {
       return marker;
     });
 
-    if (isSearching) {
-      // 전국 통합 검색 모드: 반경 원 대신, 결과가 전부 보이도록 지도 범위를 맞춘다
+    if (isRegionSearch) {
+      // 지역 검색 모드: 반경 원 대신, 결과가 전부 보이도록 지도 범위를 맞춘다
       circleRef.current?.setMap(null);
       if (visibleStores.length > 0) {
         const bounds = new kakao.maps.LatLngBounds();
@@ -597,7 +672,7 @@ export default function MapViewKakao() {
       fillOpacity: 0.05,
     });
     circleRef.current.setMap(map);
-  }, [visibleStores, radiusM, sdkStatus, activeCenter.lat, activeCenter.lon, category, isSearching]);
+  }, [visibleStores, radiusM, sdkStatus, activeCenter.lat, activeCenter.lon, category, isRegionSearch]);
 
   // 매장이 선택될 때마다(마커 클릭이든 사이드바 리스트 클릭이든 — 둘 다 selectedStore를
   // 바꾸는 진입점이라 여기 하나로 통일) 스트릿뷰 상세가 열리는 셈이니 조회수를 1 증가시킨다.
@@ -692,9 +767,7 @@ export default function MapViewKakao() {
     // "내주변" 탭이 없어진 대신, 이 버튼이 "진짜 내 위치로 돌아가기" 역할을 전담한다.
     setSearchCenterOverride(null);
     setMapDragCenter(null);
-    setSelectedStation(null);
-    setSearchQuery("");
-    setStationResults([]);
+    resetSearchCriteria();
     // activeCenter는 다음 렌더에야 재계산되니, 여기서는 geoCenter/DEFAULT를 직접
     // 계산해서 지도만 먼저 옮겨준다(역 기준점은 방금 지웠으니 더 이상 고려 안 함).
     const fallback = geoCenter ? { lat: geoCenter.lat, lon: geoCenter.lon } : DEFAULT_CENTER;
@@ -702,25 +775,99 @@ export default function MapViewKakao() {
     map.setLevel(7);
   };
 
-  const pickStation = (station) => {
-    setSearchCenterOverride(null); // 역 선택도 명시적인 "여기로" 행동 — 지도 드래그 임시 기준점은 해제
-    setMapDragCenter(null);
-    setSelectedStation(station);
-    setSearchQuery(station.name);
+  // 역/지역/매장 탭에서 잡아둔 검색 기준을 전부 해제(입력값 포함)
+  const resetSearchCriteria = () => {
+    setSelectedStation(null);
+    setStationQuery("");
     setStationResults([]);
+    setCtprvnState("");
+    setSigngu("");
+    setAppliedRegion(null);
+    setPickedStore(null);
+    setStoreQuery("");
+    setStoreResults([]);
   };
 
-  // "현 지도에서 검색" 버튼 클릭 — 드래그로 본 위치를 실제 검색 기준으로 확정한다
-  const searchInCurrentMap = () => {
-    if (!mapDragCenter) return;
-    setSearchCenterOverride(mapDragCenter);
+  const changeSearchMode = (mode) => {
+    if (mode === searchMode) return;
+    resetSearchCriteria();
+    setSearchCenterOverride(null);
     setMapDragCenter(null);
+    setSearchMode(mode);
+  };
+
+  // 역/매장을 고르는 것도 명시적인 "여기로" 행동 — 지도 드래그로 잡아둔 임시 기준점은 해제
+  const clearMapOverride = () => {
+    setSearchCenterOverride(null);
+    setMapDragCenter(null);
+  };
+
+  const handleStationQueryChange = (value) => {
+    setStationQuery(value);
+    if (selectedStation) setSelectedStation(null);
+  };
+
+  const pickStation = (station) => {
+    clearMapOverride();
+    setSelectedStation(station);
+    setStationQuery(station.name);
+    setStationResults([]);
   };
 
   const clearStation = () => {
     setSelectedStation(null);
-    setSearchQuery("");
+    setStationQuery("");
     setStationResults([]);
+  };
+
+  // 시/도를 바꾸면 이전 시/도의 시/군/구 선택은 의미가 없으니 같이 비운다
+  const setCtprvn = (value) => {
+    setCtprvnState(value);
+    setSigngu("");
+  };
+
+  const applyRegionSearch = () => {
+    if (!ctprvn) return;
+    clearMapOverride();
+    setSelectedStore(null);
+    setAppliedRegion({ ctprvn, signgu });
+  };
+
+  const clearRegion = () => {
+    setAppliedRegion(null);
+    setCtprvnState("");
+    setSigngu("");
+  };
+
+  const handleStoreQueryChange = (value) => {
+    setStoreQuery(value);
+    if (pickedStore) setPickedStore(null);
+  };
+
+  const pickStore = (store) => {
+    clearMapOverride();
+    // 고른 매장이 지금 보고 있는 종류(포토부스/사진관)와 다르면 지도에 안 보이니 맞춰준다
+    setCategory(store.type);
+    setBrandFilter("");
+    setPickedStore(store);
+    setStoreQuery([store.bizesNm, store.brchNm].filter(Boolean).join(" "));
+    setStoreResults([]);
+    setSelectedStore(store); // 로드뷰 패널도 바로 그 매장으로
+  };
+
+  const clearPickedStore = () => {
+    setPickedStore(null);
+    setStoreQuery("");
+    setStoreResults([]);
+  };
+
+  // "현 지도에서 검색" 버튼 클릭 — 드래그로 본 위치를 실제 검색 기준으로 확정한다.
+  // 지역 검색이 걸려 있었다면 그건 해제하고 이 위치 기준 반경 검색으로 돌아간다.
+  const searchInCurrentMap = () => {
+    if (!mapDragCenter) return;
+    setAppliedRegion(null);
+    setSearchCenterOverride(mapDragCenter);
+    setMapDragCenter(null);
   };
 
   const searchControlsProps = {
@@ -731,15 +878,34 @@ export default function MapViewKakao() {
     brandFilter,
     setBrandFilter,
     brandOptions: BRAND_FILTER_OPTIONS,
-    searchQuery,
-    setSearchQuery,
+    searchMode,
+    changeSearchMode,
+    stationQuery,
+    setStationQuery: handleStationQueryChange,
     stationResults,
     stationLoading,
     stationError,
     selectedStation,
-    setSelectedStation,
     pickStation,
     clearStation,
+    regions,
+    regionsError,
+    ctprvn,
+    setCtprvn,
+    signgu,
+    setSigngu,
+    appliedRegion,
+    applyRegionSearch,
+    clearRegion,
+    storeQuery,
+    setStoreQuery: handleStoreQueryChange,
+    storeResults,
+    storeLoading,
+    storeError,
+    storeSearched,
+    pickedStore,
+    pickStore,
+    clearPickedStore,
     radiusM,
     setRadiusM,
     sdkStatus,
@@ -970,6 +1136,7 @@ export default function MapViewKakao() {
             onSelectStore={setSelectedStore}
             activeCenterLabel={activeCenter.label}
             radiusM={radiusM}
+            regionLabel={regionLabel}
           />
         </div>
 
@@ -1108,6 +1275,7 @@ export default function MapViewKakao() {
             onSelectStore={setSelectedStore}
             activeCenterLabel={activeCenter.label}
             radiusM={radiusM}
+            regionLabel={regionLabel}
           />
         </div>
       </section>
