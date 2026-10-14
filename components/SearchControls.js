@@ -11,10 +11,13 @@ export const RADIUS_OPTIONS = [
   { label: "10km", meters: 10000 },
 ];
 
-// 매장명/지역/역 3탭을 없애고 입력 하나로 통합했다 — 서버(/api/stores?region=)가
-// 매장명·지점명·주소·시도·시군구를 한꺼번에 찾아주고, 같은 입력값으로 역 자동완성도
-// 동시에 돌린다(MapViewKakao.js). "역" 한 글자짜리 탭 라벨이 안 예뻐서 없앤 것도 있음.
-export const SEARCH_PLACEHOLDER = "원하는 지역이나 매장명을 검색하세요";
+// 검색 탭: 역 / 지역 / 매장. 한때 입력 하나로 통합했었는데, 자동완성엔 역만 뜨고 매장·지역
+// 결과는 지도 밖 어딘가에 깔려서 "역만 검색된다"로 보이는 문제가 있어 다시 탭으로 나눴다.
+export const SEARCH_TABS = [
+  { key: "station", label: "역 검색", placeholder: "역 이름을 입력하세요 (예: 강남역)" },
+  { key: "region", label: "지역 검색" },
+  { key: "store", label: "매장 검색", placeholder: "매장명을 입력하세요 (예: 포토이즘)" },
+];
 
 /**
  * 매장 종류: 포토부스(네컷사진류) / 사진관. `variant="pill"`이면 카드 안이 아니라
@@ -162,7 +165,7 @@ export function BrandToggle({ brand, setBrand, options, variant = "pill" }) {
 
 /** 돋보기 아이콘이 붙은 입력창 한 줄 (공용). 검색 조건 영역이 배경에 묻혀 눈에 잘
  *  안 띈다는 피드백으로, 주변 다크 톤과 대비되는 흰 배경 + 또렷한 테두리로 고정했다. */
-function SearchInputRow({ value, onChange, placeholder }) {
+function SearchInputRow({ value, onChange, placeholder, ariaLabel }) {
   return (
     <div
       style={{
@@ -180,122 +183,338 @@ function SearchInputRow({ value, onChange, placeholder }) {
         <circle cx="11" cy="11" r="7" stroke="#8B92A5" strokeWidth="2" />
         <path d="M21 21l-4.3-4.3" stroke="#8B92A5" strokeWidth="2" strokeLinecap="round" />
       </svg>
-      <input value={value} onChange={onChange} placeholder={placeholder} style={inputStyle} />
+      <input
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        aria-label={ariaLabel || placeholder}
+        autoComplete="off"
+        style={inputStyle}
+      />
+    </div>
+  );
+}
+
+/** 입력창 아래에 붙는 자동완성 드롭다운 (역/매장 탭 공용). */
+function SuggestionDropdown({ loading, error, items, emptyText, renderItem }) {
+  const showEmpty = !loading && !error && items.length === 0 && emptyText;
+  if (!loading && !error && items.length === 0 && !showEmpty) return null;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        top: "100%",
+        marginTop: 4,
+        background: "var(--surface-2)",
+        border: "1px solid var(--divider)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+        overflow: "hidden",
+        zIndex: 1001,
+      }}
+    >
+      {loading && <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)" }}>검색 중...</div>}
+      {error && <div style={{ padding: "10px 14px", fontSize: 13, color: "#FF7A45" }}>{error}</div>}
+      {showEmpty && <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)" }}>{emptyText}</div>}
+      {!loading && !error && items.map(renderItem)}
+    </div>
+  );
+}
+
+const suggestionButtonStyle = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  border: "none",
+  background: "transparent",
+  padding: "10px 14px",
+  cursor: "pointer",
+  borderBottom: "1px solid var(--divider)",
+};
+
+/** "OO 기준" / "OO 검색 결과" 처럼 지금 적용된 검색 기준을 보여주고 해제할 수 있는 칩. */
+function AppliedChip({ label, onClear, clearLabel }) {
+  return (
+    <div style={{ padding: "8px 0 0" }}>
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          background: "rgba(255,255,255,0.10)",
+          color: "var(--text-primary)",
+          borderRadius: "var(--radius-pill)",
+          padding: "5px 6px 5px 12px",
+          fontSize: 12,
+          fontWeight: 600,
+        }}
+      >
+        {label}
+        <button
+          onClick={onClear}
+          aria-label={clearLabel}
+          style={{
+            border: "none",
+            background: "var(--surface-2)",
+            borderRadius: "50%",
+            width: 18,
+            height: 18,
+            cursor: "pointer",
+            fontSize: 11,
+            lineHeight: "18px",
+            textAlign: "center",
+            color: "var(--text-secondary)",
+          }}
+        >
+          ✕
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** 역 / 지역 / 매장 탭 헤더 */
+function SearchTabs({ searchMode, changeSearchMode }) {
+  return (
+    <div role="tablist" aria-label="검색 방식" style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+      {SEARCH_TABS.map((tab) => {
+        const active = searchMode === tab.key;
+        return (
+          <button
+            key={tab.key}
+            role="tab"
+            aria-selected={active}
+            onClick={() => changeSearchMode(tab.key)}
+            style={{
+              flex: 1,
+              border: "none",
+              borderRadius: "var(--radius-pill)",
+              padding: "7px 0",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              background: active ? "var(--brand)" : "rgba(255,255,255,0.06)",
+              color: active ? "#FFFFFF" : "var(--text-secondary)",
+              transition: "background 150ms ease, color 150ms ease",
+            }}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function RegionSelect({ value, onChange, disabled, ariaLabel, children }) {
+  return (
+    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        style={{
+          appearance: "none",
+          WebkitAppearance: "none",
+          MozAppearance: "none",
+          width: "100%",
+          background: "#FFFFFF",
+          border: "1px solid #D5D9E3",
+          borderRadius: "var(--radius-pill)",
+          padding: "10px 30px 10px 14px",
+          fontSize: 14,
+          color: disabled ? "#8B92A5" : "#191C27",
+          cursor: disabled ? "not-allowed" : "pointer",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {children}
+      </select>
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+        style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}
+      >
+        <path d="M6 9l6 6 6-6" stroke="#8B92A5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
     </div>
   );
 }
 
 /**
- * 검색 조건: 매장명/지역/역 3개 탭을 없애고 입력창 하나로 통합했다 — 이 값 그대로
- * /api/stores?region=(매장명+주소 통합 서버 검색)과 /api/stations?q=(역 자동완성)에
- * 동시에 쓰인다. 입력값이 비어 있으면 그 자체로 "필터 없음(=내 주변 전체)"이 된다.
+ * 검색 조건: 역 검색 / 지역 검색 / 매장 검색 3탭.
+ *  - 역: 역 이름 자동완성 → 고르면 그 역 기준 반경 검색
+ *  - 지역: 시/도 + 시/군/구 셀렉트 박스 → 검색 버튼으로 그 지역 매장 전체
+ *  - 매장: 매장명 자동완성 → 고르면 그 매장으로 지도 이동 + 로드뷰
+ * 상태는 전부 부모(MapViewKakao)가 들고 있다.
  */
 export function SearchModeInput({
-  searchQuery,
-  setSearchQuery,
+  searchMode,
+  changeSearchMode,
+  // 역
+  stationQuery,
+  setStationQuery,
   stationResults,
   stationLoading,
   stationError,
   selectedStation,
-  setSelectedStation,
   pickStation,
   clearStation,
+  // 지역
+  regions,
+  regionsError,
+  ctprvn,
+  setCtprvn,
+  signgu,
+  setSigngu,
+  appliedRegion,
+  applyRegionSearch,
+  clearRegion,
+  // 매장
+  storeQuery,
+  setStoreQuery,
+  storeResults,
+  storeLoading,
+  storeError,
+  storeSearched,
+  pickedStore,
+  pickStore,
+  clearPickedStore,
 }) {
+  const tab = SEARCH_TABS.find((t) => t.key === searchMode);
+  const signguOptions = regions.find((r) => r.ctprvn === ctprvn)?.signgus ?? [];
+
   return (
     <div>
-      <div style={{ position: "relative" }}>
-        <SearchInputRow
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            if (selectedStation) setSelectedStation(null);
-          }}
-          placeholder={SEARCH_PLACEHOLDER}
-        />
+      <SearchTabs searchMode={searchMode} changeSearchMode={changeSearchMode} />
 
-        {(stationLoading || stationError || stationResults.length > 0) && (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: "100%",
-              marginTop: 4,
-              background: "var(--surface-2)",
-              border: "1px solid var(--divider)",
-              borderRadius: "var(--radius-lg)",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-              overflow: "hidden",
-              zIndex: 1001,
-            }}
-          >
-            {stationLoading && (
-              <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--text-secondary)" }}>검색 중...</div>
+      {searchMode === "station" && (
+        <>
+          <div style={{ position: "relative" }}>
+            <SearchInputRow
+              value={stationQuery}
+              onChange={(e) => setStationQuery(e.target.value)}
+              placeholder={tab.placeholder}
+            />
+            {!selectedStation && (
+              <SuggestionDropdown
+                loading={stationLoading}
+                error={stationError}
+                items={stationResults}
+                renderItem={(station) => (
+                  <button
+                    key={`${station.name}-${station.lat}-${station.lon}`}
+                    onClick={() => pickStation(station)}
+                    style={suggestionButtonStyle}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{station.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{station.address}</div>
+                  </button>
+                )}
+              />
             )}
-            {stationError && (
-              <div style={{ padding: "10px 14px", fontSize: 13, color: "#FF7A45" }}>{stationError}</div>
-            )}
-            {!stationLoading &&
-              !stationError &&
-              stationResults.map((station) => (
-                <button
-                  key={`${station.name}-${station.lat}-${station.lon}`}
-                  onClick={() => pickStation(station)}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    textAlign: "left",
-                    border: "none",
-                    background: "transparent",
-                    padding: "10px 14px",
-                    cursor: "pointer",
-                    borderBottom: "1px solid var(--divider)",
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{station.name}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{station.address}</div>
-                </button>
-              ))}
           </div>
-        )}
-      </div>
+          {selectedStation && (
+            <AppliedChip label={`${selectedStation.name} 기준`} onClear={clearStation} clearLabel="역 선택 해제" />
+          )}
+        </>
+      )}
 
-      {selectedStation && (
-        <div style={{ padding: "8px 0 0" }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              background: "rgba(255,255,255,0.10)",
-              color: "var(--text-primary)",
-              borderRadius: "var(--radius-pill)",
-              padding: "5px 6px 5px 12px",
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            {selectedStation.name} 기준
+      {searchMode === "region" && (
+        <>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <RegionSelect value={ctprvn} onChange={setCtprvn} ariaLabel="시/도">
+              <option value="">시/도</option>
+              {regions.map((r) => (
+                <option key={r.ctprvn} value={r.ctprvn}>
+                  {r.ctprvn}
+                </option>
+              ))}
+            </RegionSelect>
+            <RegionSelect value={signgu} onChange={setSigngu} disabled={!ctprvn} ariaLabel="시/군/구">
+              <option value="">{ctprvn ? "전체" : "시/군/구"}</option>
+              {signguOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </RegionSelect>
             <button
-              onClick={clearStation}
-              aria-label="역 선택 해제"
+              onClick={applyRegionSearch}
+              disabled={!ctprvn}
               style={{
+                flexShrink: 0,
                 border: "none",
-                background: "var(--surface-2)",
-                borderRadius: "50%",
-                width: 18,
-                height: 18,
-                cursor: "pointer",
-                fontSize: 11,
-                lineHeight: "18px",
-                textAlign: "center",
-                color: "var(--text-secondary)",
+                borderRadius: "var(--radius-pill)",
+                padding: "10px 16px",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: ctprvn ? "pointer" : "not-allowed",
+                background: ctprvn ? "var(--brand)" : "rgba(255,255,255,0.10)",
+                color: ctprvn ? "#FFFFFF" : "var(--text-tertiary)",
               }}
             >
-              ✕
+              검색
             </button>
-          </span>
-        </div>
+          </div>
+          {regionsError && <div style={{ paddingTop: 8, fontSize: 12, color: "#FF7A45" }}>{regionsError}</div>}
+          {appliedRegion && (
+            <AppliedChip
+              label={`${[appliedRegion.ctprvn, appliedRegion.signgu].filter(Boolean).join(" ")} 검색 결과`}
+              onClear={clearRegion}
+              clearLabel="지역 검색 해제"
+            />
+          )}
+        </>
+      )}
+
+      {searchMode === "store" && (
+        <>
+          <div style={{ position: "relative" }}>
+            <SearchInputRow
+              value={storeQuery}
+              onChange={(e) => setStoreQuery(e.target.value)}
+              placeholder={tab.placeholder}
+            />
+            {!pickedStore && (
+              <SuggestionDropdown
+                loading={storeLoading}
+                error={storeError}
+                items={storeResults}
+                emptyText={storeSearched ? "일치하는 매장이 없어요" : null}
+                renderItem={(store) => (
+                  <button key={store.bizesId} onClick={() => pickStore(store)} style={suggestionButtonStyle}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                        {[store.bizesNm, store.brchNm].filter(Boolean).join(" ")}
+                      </span>
+                      <span style={{ fontSize: 11, color: "var(--text-tertiary)", flexShrink: 0 }}>
+                        {store.type === "studio" ? "사진관" : "포토부스"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      {store.rdnmAdr || store.lnoAdr || "주소 정보 없음"}
+                    </div>
+                  </button>
+                )}
+              />
+            )}
+          </div>
+          {pickedStore && (
+            <AppliedChip
+              label={`${[pickedStore.bizesNm, pickedStore.brchNm].filter(Boolean).join(" ")} 기준`}
+              onClear={clearPickedStore}
+              clearLabel="매장 선택 해제"
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -427,7 +646,7 @@ export function RadiusControl({ radiusM, setRadiusM, sdkStatus, loading, fetchEr
 /** PC 전용 — 브랜드 패널 카드 안에 들어가는, 위 조각을 전부 합친 완성형. */
 export default function SearchControls(props) {
   // 매장종류/브랜드 필터 + 반경 컨트롤은 이제 지도 좌측 상단에 떠 있는 형태로 옮겨가서
-  // (모바일과 동일) 사이드바엔 검색 조건(매장명/지역/역) 입력만 남는다. 뒤따르는 구분선은
+  // (모바일과 동일) 사이드바엔 검색 조건(역/지역/매장 탭) 입력만 남는다. 뒤따르는 구분선은
   // BrandPanel이 결과 리스트 앞에 이미 그려주므로 여기서 또 넣지 않는다.
   return <SearchModeInput {...props} />;
 }

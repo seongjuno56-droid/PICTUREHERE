@@ -1,16 +1,20 @@
 /**
  * GET /api/stores?radius=3000&lat=37.465&lon=126.680
- * GET /api/stores?region=포토이즘&lat=37.465&lon=126.680   (통합 검색 — 전국 대상, 반경 무시)
+ * GET /api/stores?ctprvn=서울특별시&signgu=강남구&lat=..&lon=..   (지역 검색 — 반경 무시)
+ * GET /api/stores?name=포토이즘&lat=..&lon=..                      (매장명 자동완성 — 전국 대상)
  *
  * 기본 모드: stores 테이블(전국 데이터, 어드민에서 편집 가능)에서 중심점 기준 대략적인
  * 위경도 바운딩 박스로 1차로 좁혀온 뒤, Haversine 거리 계산으로 radius(m) 이내만
  * 정확히 걸러 반환한다. 화면 필터(3/5/10km)가 바뀔 때마다 이 route를 부르면 되고,
  * 공공데이터포털 API는 다시 호출하지 않는다.
  *
- * region 모드: 검색창 하나로 매장명/지역/주소를 한꺼번에 찾는 통합검색에서 쓴다. 지금
- * 지도 중심이 어디든 상관없이 전국에서 매장명·지점명·주소·시도·시군구 중 하나라도
- * region 텍스트를 포함하는 매장을 전부(최대 500개) 찾는다 — 반경 바운딩 박스를 아예 안
- * 씀. distanceM은 정렬/표시용으로만 계산한다.
+ * 지역 모드(ctprvn[, signgu]): "지역 검색" 탭의 시/도·시/군구 셀렉트 박스 값으로 정확히
+ * 일치하는 매장을 찾는다. signgu를 비우면 시/도 전체. 예전 통합검색(region=)은 주소 문자열
+ * 부분일치라 "중구"처럼 여러 시도에 걸친 이름이 섞여 나와서, 셀렉트 박스 값과 정확히
+ * 맞추는 방식으로 바꿨다.
+ *
+ * 매장명 모드(name): "매장 검색" 탭의 자동완성용 — 매장명/지점명 부분일치, 가까운 순으로
+ * 최대 NAME_SEARCH_LIMIT개. distanceM은 정렬/표시용으로만 계산한다.
  */
 import { NextResponse } from "next/server";
 import { query } from "../../../lib/db.js";
@@ -22,7 +26,9 @@ const DEFAULT_CENTER = {
 };
 
 const KM_PER_LAT_DEG = 111;
-const REGION_SEARCH_LIMIT = 500;
+const REGION_SEARCH_LIMIT = 1000;
+const NAME_SEARCH_LIMIT = 8;
+const NAME_SEARCH_CANDIDATES = 300; // 이만큼 가져와서 거리순 정렬 후 상위 NAME_SEARCH_LIMIT개만
 
 function toStoreShape(item) {
   return {
@@ -49,24 +55,51 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const lat = Number(searchParams.get("lat")) || DEFAULT_CENTER.lat;
   const lon = Number(searchParams.get("lon")) || DEFAULT_CENTER.lon;
-  const region = (searchParams.get("region") || "").trim();
+  const ctprvn = (searchParams.get("ctprvn") || "").trim();
+  const signgu = (searchParams.get("signgu") || "").trim();
+  const name = (searchParams.get("name") || "").trim();
 
-  if (region) {
+  if (ctprvn) {
     const { rows } = await query(
       `select ${STORE_COLUMNS}
        from stores
        where is_active = true
-         and (name ILIKE $1 OR branch_name ILIKE $1 OR road_address ILIKE $1 OR lot_address ILIKE $1
-              OR ctprvn_name ILIKE $1 OR signgu_name ILIKE $1)
+         and ctprvn_name = $1
+         and ($2 = '' or signgu_name = $2)
        limit ${REGION_SEARCH_LIMIT}`,
-      [`%${region}%`]
+      [ctprvn, signgu]
     );
 
     const sorted = withDistance(rows, lat, lon).sort((a, b) => a.distanceM - b.distanceM);
 
     return NextResponse.json({
       center: { lat, lon },
-      region,
+      ctprvn,
+      signgu: signgu || null,
+      count: sorted.length,
+      stores: sorted.map(toStoreShape),
+    });
+  }
+
+  if (name) {
+    // 사용자가 입력한 %, _ 가 LIKE 와일드카드로 해석되지 않도록 이스케이프
+    const escaped = name.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const { rows } = await query(
+      `select ${STORE_COLUMNS}
+       from stores
+       where is_active = true
+         and (name || ' ' || coalesce(branch_name, '')) ILIKE $1 -- "포토이즘 강남점"처럼 이어 붙여 쳐도 걸리게
+       limit ${NAME_SEARCH_CANDIDATES}`,
+      [`%${escaped}%`]
+    );
+
+    const sorted = withDistance(rows, lat, lon)
+      .sort((a, b) => a.distanceM - b.distanceM)
+      .slice(0, NAME_SEARCH_LIMIT);
+
+    return NextResponse.json({
+      center: { lat, lon },
+      name,
       count: sorted.length,
       stores: sorted.map(toStoreShape),
     });
