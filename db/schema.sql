@@ -24,6 +24,10 @@ alter table stores add column if not exists brand text; -- 포토부스 프랜�
 alter table stores add column if not exists ctprvn_name text; -- 시/도
 alter table stores add column if not exists signgu_name text; -- 시/군/구
 alter table stores add column if not exists view_count integer not null default 0; -- 마커/스트릿뷰 상세 조회수
+-- 정기 데이터 갱신(scripts/syncStores.js)용
+alter table stores add column if not exists last_seen_at timestamptz; -- 마지막으로 공공데이터 수집 결과에 포함된 시각
+alter table stores add column if not exists closed_at timestamptz; -- 수집 결과에서 빠져 sync가 "폐업 추정"으로 비활성화한 시각(다시 잡히면 null로 복구)
+alter table stores add column if not exists admin_edited_at timestamptz; -- 어드민에서 직접 수정한 시각 — 이 값이 있으면 sync가 내용을 덮어쓰거나 비활성화하지 않음
 
 create index if not exists idx_stores_type on stores (type);
 create index if not exists idx_stores_created_at on stores (created_at desc);

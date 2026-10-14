@@ -22,33 +22,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchAllStores, PHOTO_STUDIO_INDS_SCLS_CD } from "../lib/storeApi.js";
+import { buildNationwideGrid, NATIONWIDE_RADIUS_M as RADIUS_M } from "../lib/nationwideGrid.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROGRESS_PATH = path.join(__dirname, ".nationwide_progress.json");
 const ITEMS_PATH = path.join(__dirname, "..", "nationwide_photo_studio_stores.json");
-
-const RADIUS_M = 10000; // API가 허용하는 최대 반경(실측 확인됨: 15000 이상은 INVALID_REQUEST_PARAMETER_ERROR)
-const GRID_SPACING_KM = 12; // 10km 반경 원으로 틈 없이 덮으려면 spacing <= radius*sqrt(2)≈14.14km
-const LAT_MIN = 33.0; // 제주/마라도 포함
-const LAT_MAX = 38.65; // 강원 고성군 등 DMZ 인근까지
-const LON_MIN = 124.5; // 백령도 등 서해 도서 포함
-const LON_MAX = 131.0; // 울릉도/독도 포함
-
-const KM_PER_LAT_DEG = 111;
-
-function buildGrid() {
-  const points = [];
-  const latStepDeg = GRID_SPACING_KM / KM_PER_LAT_DEG;
-  let latIdx = 0;
-  for (let lat = LAT_MIN; lat <= LAT_MAX; lat += latStepDeg, latIdx += 1) {
-    const kmPerLonDegHere = KM_PER_LAT_DEG * Math.cos((lat * Math.PI) / 180);
-    const lonStepDeg = GRID_SPACING_KM / kmPerLonDegHere;
-    for (let lon = LON_MIN; lon <= LON_MAX; lon += lonStepDeg) {
-      points.push({ cy: Number(lat.toFixed(6)), cx: Number(lon.toFixed(6)) });
-    }
-  }
-  return points;
-}
 
 function loadProgress() {
   if (!fs.existsSync(PROGRESS_PATH)) return { completedIndexes: [] };
@@ -77,7 +55,7 @@ async function main() {
   const serviceKey = process.env.DATA_GO_KR_SERVICE_KEY;
   if (!serviceKey) throw new Error("DATA_GO_KR_SERVICE_KEY가 .env에 없습니다.");
 
-  const grid = buildGrid();
+  const grid = buildNationwideGrid();
   const progress = loadProgress();
   const completed = new Set(progress.completedIndexes);
   const itemsMap = loadItemsMap();

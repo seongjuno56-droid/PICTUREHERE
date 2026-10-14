@@ -10,7 +10,8 @@
     "start": "next start",
     "fetch:stores": "node scripts/fetchStores.js",
     "rebuild:derived": "node scripts/rebuildDerived.js",
-    "validate:brands": "node scripts/validateBrands.js"
+    "validate:brands": "node scripts/validateBrands.js",
+    "sync:stores": "node scripts/syncStores.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
